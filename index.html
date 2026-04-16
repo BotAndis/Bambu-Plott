@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="night">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Plotter Lab</title>
+
+  <!-- Google Fonts: DM Sans -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap" rel="stylesheet" />
+
+  <!-- DaisyUI -->
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@latest/dist/full.min.css" rel="stylesheet" />
+
+  <!-- Tailwind Play CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary:  "#4285F4",
+            success:  "#34A853",
+            warning:  "#FBBC04",
+            danger:   "#EA4335",
+          },
+          fontFamily: {
+            sans: ['"DM Sans"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+          },
+        },
+      },
+    };
+  </script>
+
+  <!-- ImageTracer.js -->
+  <script src="https://cdn.jsdelivr.net/npm/imagetracerjs/imagetracer.js"></script>
+
+  <style>
+    body {
+      background-color: #0f0f0f;
+      background-image: radial-gradient(ellipse at 50% 40%, rgba(66,133,244,0.04) 0%, transparent 70%);
+      font-family: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+    }
+    .btn-pill   { border-radius: 9999px !important; transition: transform 0.15s; }
+    .btn-pill:hover { transform: scale(1.05); }
+    pre.output-pre {
+      white-space: pre;
+      overflow: auto;
+      max-height: 320px;
+      font-size: 0.72rem;
+      line-height: 1.5;
+      background: #0a0a0a;
+      border-radius: 0.75rem;
+      padding: 0.75rem 1rem;
+    }
+    .mode-btn.active {
+      background-color: #4285F4 !important;
+      color: #fff !important;
+      border-color: #4285F4 !important;
+    }
+    #preview-canvas { display: block; width: 100%; }
+    .drop-zone {
+      border: 2px dashed rgba(66,133,244,0.4);
+      border-radius: 0.75rem;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .drop-zone.dragover {
+      border-color: #4285F4;
+      background: rgba(66,133,244,0.06);
+    }
+    .tab-btn { border-bottom: 2px solid transparent; }
+    .tab-btn.active { border-color: #4285F4; color: #4285F4; }
+  </style>
+</head>
+<body class="min-h-screen text-base-content">
+
+  <!-- ===== HEADER ===== -->
+  <header class="sticky top-0 z-50 bg-base-200 border-b border-base-300 shadow-md px-6 py-3">
+    <div class="flex items-center gap-4">
+      <!-- Branding -->
+      <div class="flex-shrink-0">
+        <div class="text-xl font-semibold tracking-tight">🖊 Plotter Lab</div>
+        <div class="text-xs text-base-content/50 leading-none mt-0.5">Bambu Lab A1 · Local Tool</div>
+      </div>
+
+      <!-- Progress bar (fills remaining space) -->
+      <div class="flex-1 flex flex-col justify-center gap-1">
+        <div id="progress-wrap" class="w-full hidden">
+          <progress id="progress-bar" class="progress w-full h-2" style="accent-color:#4285F4;color:#4285F4;" value="0" max="100"></progress>
+          <div id="progress-label" class="text-xs text-base-content/50 mt-0.5 text-center"></div>
+        </div>
+      </div>
+
+      <!-- Action buttons -->
+      <div class="flex-shrink-0 flex items-center gap-2">
+        <button id="btn-start" class="btn btn-pill btn-sm font-semibold px-5 text-white" style="background:#34A853;border-color:#34A853;">
+          ▶ Start
+        </button>
+        <button id="btn-stop" class="btn btn-pill btn-sm font-semibold px-5 text-white" style="background:#EA4335;border-color:#EA4335;">
+          ⏹ Stop
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===== MAIN LAYOUT ===== -->
+  <main class="flex gap-4 p-4 min-h-[calc(100vh-64px)]">
+
+    <!-- ===== LEFT COLUMN ===== -->
+    <div class="w-1/3 flex flex-col gap-4">
+      <div class="card bg-base-200 rounded-2xl shadow-xl p-4 flex flex-col gap-4 flex-1">
+
+        <!-- Mode selector -->
+        <div class="flex gap-2">
+          <button id="mode-js"    class="mode-btn btn btn-pill btn-sm flex-1 font-medium active">JavaScript</button>
+          <button id="mode-pdf"   class="mode-btn btn btn-pill btn-sm flex-1 font-medium">PDF</button>
+          <button id="mode-image" class="mode-btn btn btn-pill btn-sm flex-1 font-medium">Image</button>
+        </div>
+
+        <!-- ── JavaScript Panel ── -->
+        <div id="panel-js" class="flex flex-col gap-2 flex-1">
+          <label class="text-sm font-medium text-base-content/70">Paste generative JavaScript</label>
+          <textarea id="js-code" class="textarea textarea-bordered font-mono text-xs leading-snug flex-1 resize-none" rows="18"
+            placeholder="// Use the draw API:\n// draw.moveTo(x, y)\n// draw.lineTo(x, y)\n// draw.stroke()\n// draw.arc(cx, cy, r, startAngle, endAngle)\n// draw.closePath()"></textarea>
+          <p class="text-xs text-base-content/40">
+            API: <code>draw.moveTo(x,y)</code> &nbsp;·&nbsp; <code>draw.lineTo(x,y)</code> &nbsp;·&nbsp; <code>draw.stroke()</code>
+          </p>
+          <div class="flex gap-2">
+            <button id="btn-export-svg"   class="btn btn-pill btn-sm flex-1 text-white font-medium" style="background:#34A853;border-color:#34A853;">⬇ Export SVG</button>
+            <button id="btn-export-gcode" class="btn btn-pill btn-sm flex-1 text-white font-medium" style="background:#34A853;border-color:#34A853;">⬇ Export G-code</button>
+          </div>
+        </div>
+
+        <!-- ── PDF Panel ── -->
+        <div id="panel-pdf" class="flex-col gap-3 hidden">
+          <label class="text-sm font-medium text-base-content/70">Upload a vector PDF</label>
+          <div id="pdf-drop" class="drop-zone flex flex-col items-center justify-center gap-2 py-10 px-4 text-center">
+            <span class="text-3xl">📄</span>
+            <span class="text-sm text-base-content/60">Drop PDF here or click to browse</span>
+            <input id="pdf-input" type="file" accept=".pdf" class="hidden" />
+          </div>
+          <div id="pdf-preview-wrap" class="hidden rounded-xl overflow-hidden border border-base-300">
+            <embed id="pdf-embed" src="" type="application/pdf" width="100%" height="200px" />
+          </div>
+        </div>
+
+        <!-- ── Image Panel ── -->
+        <div id="panel-image" class="flex-col gap-3 hidden">
+          <label class="text-sm font-medium text-base-content/70">Upload a raster image</label>
+          <div id="img-drop" class="drop-zone flex flex-col items-center justify-center gap-2 py-10 px-4 text-center">
+            <span class="text-3xl">🖼</span>
+            <span class="text-sm text-base-content/60">Drop image here or click to browse</span>
+            <input id="img-input" type="file" accept="image/png,image/jpeg" class="hidden" />
+          </div>
+          <div id="img-preview-wrap" class="hidden rounded-xl overflow-hidden border border-base-300">
+            <img id="img-preview" src="" alt="preview" class="w-full object-contain max-h-48" />
+          </div>
+        </div>
+
+      </div>
+    </div><!-- /left column -->
+
+    <!-- ===== RIGHT COLUMN ===== -->
+    <div class="flex-1 flex flex-col gap-4">
+
+      <!-- Preview card -->
+      <div class="card bg-base-200 rounded-2xl shadow-xl p-4 flex flex-col gap-3">
+        <!-- Tabs -->
+        <div class="flex gap-4 border-b border-base-300 pb-1">
+          <button id="tab-animated" class="tab-btn text-sm font-medium pb-1 active">Animated Preview</button>
+          <button id="tab-static"   class="tab-btn text-sm font-medium pb-1">Static SVG</button>
+        </div>
+
+        <!-- Animated pane -->
+        <div id="pane-animated" class="flex flex-col gap-2">
+          <canvas id="preview-canvas" height="300" style="min-height:300px;background:#0a0a0a;border-radius:0.75rem;"></canvas>
+          <div class="flex items-center gap-3">
+            <span class="text-xs text-base-content/50">Speed</span>
+            <input id="anim-speed" type="range" min="1" max="100" value="50" class="range range-xs flex-1" style="accent-color:#4285F4;" />
+            <button id="btn-anim-play"  class="btn btn-pill btn-xs px-4" style="background:#34A853;color:#fff;border-color:#34A853;">▶ Play</button>
+            <button id="btn-anim-stop" class="btn btn-pill btn-xs px-4" style="background:#EA4335;color:#fff;border-color:#EA4335;">⏹ Stop</button>
+          </div>
+        </div>
+
+        <!-- Static pane -->
+        <div id="pane-static" class="hidden">
+          <div id="svg-preview" class="overflow-auto rounded-xl bg-[#0a0a0a] p-2" style="min-height:300px;max-height:420px;"></div>
+        </div>
+      </div>
+
+      <!-- Pen profile selector -->
+      <div class="card bg-base-200 rounded-2xl shadow-xl px-4 py-3 flex items-center gap-3">
+        <span class="text-sm font-medium flex-shrink-0">🖊 Pen Profile</span>
+        <select id="pen-select" class="select select-bordered select-sm flex-1 rounded-full"></select>
+      </div>
+
+      <!-- Output card -->
+      <div class="card bg-base-200 rounded-2xl shadow-xl p-4 flex flex-col gap-3 flex-1">
+        <!-- Tabs -->
+        <div class="flex gap-4 border-b border-base-300 pb-1">
+          <button id="tab-svg-out"   class="tab-btn text-sm font-medium pb-1 active">SVG Output</button>
+          <button id="tab-gcode-out" class="tab-btn text-sm font-medium pb-1">G-code Output</button>
+        </div>
+
+        <!-- SVG output pane -->
+        <div id="pane-svg-out" class="flex flex-col gap-2">
+          <pre id="svg-out-pre" class="output-pre flex-1">(no SVG yet)</pre>
+          <button id="btn-dl-svg" class="btn btn-pill btn-sm self-start px-5 text-white font-medium" style="background:#34A853;border-color:#34A853;">⬇ Download SVG</button>
+        </div>
+
+        <!-- G-code output pane -->
+        <div id="pane-gcode-out" class="flex flex-col gap-2 hidden">
+          <pre id="gcode-out-pre" class="output-pre flex-1">(no G-code yet)</pre>
+          <button id="btn-dl-gcode" class="btn btn-pill btn-sm self-start px-5 text-white font-medium" style="background:#34A853;border-color:#34A853;">⬇ Download G-code</button>
+        </div>
+      </div>
+
+      <!-- Error area -->
+      <div id="error-area" class="alert alert-error hidden flex items-start gap-2 rounded-2xl shadow">
+        <span class="text-lg">⚠</span>
+        <span id="error-msg" class="flex-1 text-sm"></span>
+        <button id="error-close" class="btn btn-ghost btn-xs btn-circle ml-auto">✕</button>
+      </div>
+
+    </div><!-- /right column -->
+  </main>
+
+  <!-- Hidden sandbox iframe -->
+  <iframe id="sandbox-frame" sandbox="allow-scripts" style="display:none;"></iframe>
+
+  <script>
+  /* =====================================================================
+     State
+  ===================================================================== */
+  let currentMode    = "js";      // "js" | "pdf" | "image"
+  let pathArray      = [];        // [{segments:[{cmd,args}]}]
+  let currentSVG     = "";
+  let currentGcode   = "";
+  let pdfFile        = null;
+  let imageFile      = null;
+  let animRafId      = null;
+  let animPlaying    = false;
+  let abortCtrl      = null;
+
+  const PEN_EMOJIS = {
+    fine_liner:    "🖊",
+    ballpoint:     "🖋",
+    marker:        "🖌",
+    technical_pen: "✒️",
+  };
+
+  /* =====================================================================
+     Utility
+  ===================================================================== */
+  function showError(msg) {
+    document.getElementById("error-msg").textContent = msg;
+    document.getElementById("error-area").classList.remove("hidden");
+  }
+  function hideError() {
+    document.getElementById("error-area").classList.add("hidden");
+  }
+  function setProgress(visible, label = "", value = 0) {
+    const wrap = document.getElementById("progress-wrap");
+    const bar  = document.getElementById("progress-bar");
+    const lbl  = document.getElementById("progress-label");
+    if (visible) {
+      wrap.classList.remove("hidden");
+      bar.value  = value;
+      lbl.textContent = label;
+    } else {
+      wrap.classList.add("hidden");
+    }
+  }
+  function triggerDownload(content, filename, mime) {
+    const blob = new Blob([content], { type: mime });
+    const url  = URL.createObjectURL(blob);
+    const a    = Object.assign(document.createElement("a"), { href: url, download: filename });
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  /* =====================================================================
+     Mode switching
+  ===================================================================== */
+  function setMode(mode) {
+    currentMode = mode;
+    ["js","pdf","image"].forEach(m => {
+      document.getElementById(`mode-${m}`).classList.toggle("active", m === mode);
+      const panel = document.getElementById(`panel-${m}`);
+      if (m === mode) {
+        panel.classList.remove("hidden");
+        panel.classList.add("flex");
+      } else {
+        panel.classList.add("hidden");
+        panel.classList.remove("flex");
+      }
+    });
+  }
+  document.getElementById("mode-js")   .addEventListener("click", () => setMode("js"));
+  document.getElementById("mode-pdf")  .addEventListener("click", () => setMode("pdf"));
+  document.getElementById("mode-image").addEventListener("click", () => setMode("image"));
+
+  /* =====================================================================
+     Preview tabs
+  ===================================================================== */
+  function setPreviewTab(tab) {
+    ["animated","static"].forEach(t => {
+      document.getElementById(`tab-${t}`).classList.toggle("active", t === tab);
+      document.getElementById(`pane-${t}`).classList.toggle("hidden", t !== tab);
+    });
+  }
+  document.getElementById("tab-animated").addEventListener("click", () => setPreviewTab("animated"));
+  document.getElementById("tab-static")  .addEventListener("click", () => setPreviewTab("static"));
+
+  /* =====================================================================
+     Output tabs
+  ===================================================================== */
+  function setOutputTab(tab) {
+    ["svg-out","gcode-out"].forEach(t => {
+      document.getElementById(`tab-${t}`).classList.toggle("active", t === tab);
+      document.getElementById(`pane-${t}`).classList.toggle("hidden", t !== tab);
+    });
+  }
+  document.getElementById("tab-svg-out")  .addEventListener("click", () => setOutputTab("svg-out"));
+  document.getElementById("tab-gcode-out").addEventListener("click", () => setOutputTab("gcode-out"));
+
+  /* =====================================================================
+     Error close
+  ===================================================================== */
+  document.getElementById("error-close").addEventListener("click", hideError);
+
+  /* =====================================================================
+     Pen profile loader
+  ===================================================================== */
+  async function loadPenProfiles() {
+    try {
+      const resp = await fetch("/pen-profiles");
+      if (!resp.ok) return;
+      const profiles = await resp.json();
+      const sel = document.getElementById("pen-select");
+      sel.innerHTML = "";
+      profiles.forEach(p => {
+        const emoji = PEN_EMOJIS[p.id] || "🖊";
+        const opt   = document.createElement("option");
+        opt.value       = p.id;
+        opt.textContent = `${emoji} ${p.name}`;
+        sel.appendChild(opt);
+      });
+    } catch (_) { /* silently ignore if backend not yet up */ }
+  }
+  loadPenProfiles();
+
+  /* =====================================================================
+     PDF drop zone
+  ===================================================================== */
+  (function() {
+    const zone  = document.getElementById("pdf-drop");
+    const input = document.getElementById("pdf-input");
+    zone.addEventListener("click", () => input.click());
+    zone.addEventListener("dragover",  e => { e.preventDefault(); zone.classList.add("dragover"); });
+    zone.addEventListener("dragleave", () => zone.classList.remove("dragover"));
+    zone.addEventListener("drop", e => {
+      e.preventDefault();
+      zone.classList.remove("dragover");
+      const f = e.dataTransfer.files[0];
+      if (f && f.type === "application/pdf") setPDFFile(f);
+    });
+    input.addEventListener("change", () => { if (input.files[0]) setPDFFile(input.files[0]); });
+  })();
+
+  function setPDFFile(file) {
+    pdfFile = file;
+    const url  = URL.createObjectURL(file);
+    const embed = document.getElementById("pdf-embed");
+    embed.src   = url;
+    document.getElementById("pdf-preview-wrap").classList.remove("hidden");
+  }
+
+  /* =====================================================================
+     Image drop zone
+  ===================================================================== */
+  (function() {
+    const zone  = document.getElementById("img-drop");
+    const input = document.getElementById("img-input");
+    zone.addEventListener("click", () => input.click());
+    zone.addEventListener("dragover",  e => { e.preventDefault(); zone.classList.add("dragover"); });
+    zone.addEventListener("dragleave", () => zone.classList.remove("dragover"));
+    zone.addEventListener("drop", e => {
+      e.preventDefault();
+      zone.classList.remove("dragover");
+      const f = e.dataTransfer.files[0];
+      if (f && (f.type === "image/png" || f.type === "image/jpeg")) setImageFile(f);
+    });
+    input.addEventListener("change", () => { if (input.files[0]) setImageFile(input.files[0]); });
+  })();
+
+  function setImageFile(file) {
+    imageFile = file;
+    const url = URL.createObjectURL(file);
+    const img = document.getElementById("img-preview");
+    img.src   = url;
+    document.getElementById("img-preview-wrap").classList.remove("hidden");
+  }
+
+  /* =====================================================================
+     JS Sandbox (hidden iframe with draw API)
+  ===================================================================== */
+  const SANDBOX_SRCDOC = `<!DOCTYPE html><html><body><script>
+var draw = {
+  _paths: [],
+  _cur: null,
+  beginPath: function() { this._cur = { segments:[] }; this._paths.push(this._cur); },
+  moveTo: function(x,y) { if(!this._cur){this.beginPath();} this._cur.segments.push({cmd:"moveTo",args:[x,y]}); parent.postMessage({type:"draw",cmd:"moveTo",args:[x,y]},"*"); },
+  lineTo: function(x,y) { if(!this._cur){this.beginPath();} this._cur.segments.push({cmd:"lineTo",args:[x,y]}); parent.postMessage({type:"draw",cmd:"lineTo",args:[x,y]},"*"); },
+  stroke: function()    { parent.postMessage({type:"draw",cmd:"stroke",args:[]},"*"); },
+  arc: function(cx,cy,r,sa,ea,ccw) {
+    var steps=Math.max(16,Math.round(Math.abs((ea-sa)/(2*Math.PI))*64));
+    var start=sa, end=ea;
+    if(ccw && end>start) end-=2*Math.PI;
+    if(!ccw && end<start) end+=2*Math.PI;
+    for(var i=0;i<=steps;i++){
+      var t=start+(end-start)*(i/steps);
+      var x=cx+r*Math.cos(t), y=cy+r*Math.sin(t);
+      if(i===0) this.moveTo(x,y); else this.lineTo(x,y);
+    }
+  },
+  closePath: function() { if(this._cur&&this._cur.segments.length){ var first=this._cur.segments[0]; if(first.cmd==="moveTo") this.lineTo(first.args[0],first.args[1]); } parent.postMessage({type:"draw",cmd:"closePath",args:[]},"*"); },
+};
+window.onerror = function(msg,src,line,col,err){ parent.postMessage({type:"error",message:String(msg)},"*"); return true; };
+<\/script><script id="user-script"><\/script></html>`;
+
+  function runSandbox(jsCode) {
+    return new Promise((resolve, reject) => {
+      const frame = document.getElementById("sandbox-frame");
+      pathArray = [];
+      let currentPath = null;
+
+      const messages = [];
+      const handler = (ev) => {
+        if (ev.source !== frame.contentWindow) return;
+        const d = ev.data;
+        if (!d || !d.type) return;
+        if (d.type === "error") {
+          window.removeEventListener("message", handler);
+          reject(new Error(d.message));
+          return;
+        }
+        if (d.type === "draw") {
+          messages.push(d);
+        }
+      };
+      window.addEventListener("message", handler);
+
+      // Build the sandbox page with user code injected
+      const escaped = jsCode
+        .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+        .replace(/"/g,"&quot;");
+      // We need raw code, not HTML-escaped — use blob URL instead
+      const srcWithCode = SANDBOX_SRCDOC.replace(
+        '<script id="user-script"><\/script>',
+        `<script id="user-script">${jsCode}<\/script>`
+      );
+
+      frame.onload = () => {
+        // Give the script 500ms to finish, then resolve
+        setTimeout(() => {
+          window.removeEventListener("message", handler);
+          // Build pathArray from messages
+          let curPath = null;
+          messages.forEach(d => {
+            if (d.cmd === "moveTo") {
+              curPath = { segments: [{ cmd: "moveTo", args: d.args }] };
+              pathArray.push(curPath);
+            } else if (d.cmd === "lineTo" || d.cmd === "closePath") {
+              if (!curPath) { curPath = { segments: [] }; pathArray.push(curPath); }
+              curPath.segments.push({ cmd: d.cmd, args: d.args });
+            } else if (d.cmd === "stroke") {
+              curPath = null;
+            }
+          });
+          resolve(pathArray);
+        }, 600);
+      };
+      frame.srcdoc = srcWithCode;
+    });
+  }
+
+  /* =====================================================================
+     Build SVG from pathArray
+  ===================================================================== */
+  function buildSVG(paths, width = 200, height = 200) {
+    let svgPaths = "";
+    paths.forEach(path => {
+      let d = "";
+      path.segments.forEach(seg => {
+        if (seg.cmd === "moveTo")   d += `M ${seg.args[0]} ${seg.args[1]} `;
+        else if (seg.cmd === "lineTo") d += `L ${seg.args[0]} ${seg.args[1]} `;
+        else if (seg.cmd === "closePath") d += "Z ";
+      });
+      if (d.trim()) svgPaths += `<path d="${d.trim()}" fill="none" stroke="#4285F4" stroke-width="0.5"/>\n`;
+    });
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}mm" height="${height}mm" viewBox="0 0 ${width} ${height}">\n${svgPaths}</svg>`;
+  }
+
+  /* =====================================================================
+     Animated canvas preview
+  ===================================================================== */
+  const canvas = document.getElementById("preview-canvas");
+  const ctx    = canvas.getContext("2d");
+
+  function resizeCanvas() {
+    canvas.width  = canvas.offsetWidth  || 600;
+    canvas.height = canvas.offsetHeight || 300;
+  }
+  resizeCanvas();
+  window.addEventListener("resize", resizeCanvas);
+
+  function stopAnim() {
+    if (animRafId) { cancelAnimationFrame(animRafId); animRafId = null; }
+    animPlaying = false;
+  }
+
+  function playAnim(paths) {
+    stopAnim();
+    if (!paths || paths.length === 0) return;
+    resizeCanvas();
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Compute bounding box
+    let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+    paths.forEach(p => p.segments.forEach(s => {
+      if (s.args && s.args.length >= 2) {
+        minX = Math.min(minX, s.args[0]);
+        minY = Math.min(minY, s.args[1]);
+        maxX = Math.max(maxX, s.args[0]);
+        maxY = Math.max(maxY, s.args[1]);
+      }
+    }));
+    if (!isFinite(minX)) return;
+    const pad = 20;
+    const scaleX = (canvas.width  - pad * 2) / (maxX - minX || 1);
+    const scaleY = (canvas.height - pad * 2) / (maxY - minY || 1);
+    const scale  = Math.min(scaleX, scaleY);
+
+    function tx(x) { return pad + (x - minX) * scale; }
+    function ty(y) { return pad + (y - minY) * scale; }
+
+    // Flatten all segments into a draw-step list
+    const steps = [];
+    paths.forEach(path => {
+      path.segments.forEach(seg => steps.push(seg));
+    });
+
+    let stepIdx = 0;
+    let penDown = false;
+    animPlaying = true;
+
+    function tick() {
+      if (!animPlaying || stepIdx >= steps.length) { animPlaying = false; return; }
+      const speed = parseInt(document.getElementById("anim-speed").value, 10);
+      const batchSize = Math.max(1, Math.round(speed / 5));
+
+      for (let b = 0; b < batchSize && stepIdx < steps.length; b++, stepIdx++) {
+        const seg = steps[stepIdx];
+        if (seg.cmd === "moveTo") {
+          ctx.beginPath();
+          ctx.moveTo(tx(seg.args[0]), ty(seg.args[1]));
+          penDown = false;
+        } else if (seg.cmd === "lineTo") {
+          ctx.strokeStyle = "#4285F4";
+          ctx.lineWidth   = 1.5;
+          ctx.lineTo(tx(seg.args[0]), ty(seg.args[1]));
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(tx(seg.args[0]), ty(seg.args[1]));
+        } else if (seg.cmd === "closePath") {
+          ctx.closePath();
+          ctx.stroke();
+        }
+      }
+      animRafId = requestAnimationFrame(tick);
+    }
+    tick();
+  }
+
+  document.getElementById("btn-anim-play").addEventListener("click", () => {
+    if (pathArray.length > 0) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      playAnim(pathArray);
+    }
+  });
+  document.getElementById("btn-anim-stop").addEventListener("click", stopAnim);
+
+  /* =====================================================================
+     Set outputs
+  ===================================================================== */
+  function setSVGOutput(svg) {
+    currentSVG = svg;
+    document.getElementById("svg-out-pre").textContent = svg;
+    // Static preview
+    const prev = document.getElementById("svg-preview");
+    prev.innerHTML = svg;
+    const el = prev.querySelector("svg");
+    if (el) {
+      el.style.maxWidth  = "100%";
+      el.style.height    = "auto";
+    }
+  }
+  function setGcodeOutput(gcode) {
+    currentGcode = gcode;
+    document.getElementById("gcode-out-pre").textContent = gcode;
+  }
+
+  /* =====================================================================
+     Fetch helpers
+  ===================================================================== */
+  async function postConvertGcode(svgText) {
+    const penId = document.getElementById("pen-select").value;
+    const resp  = await fetch("/convert/gcode", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ svg: svgText, pen_profile: penId }),
+      signal: abortCtrl.signal,
+    });
+    return resp.json();
+  }
+
+  async function postConvertPDF(file) {
+    const fd = new FormData();
+    fd.append("file", file);
+    const resp = await fetch("/convert/pdf", {
+      method: "POST",
+      body: fd,
+      signal: abortCtrl.signal,
+    });
+    return resp.json();
+  }
+
+  /* =====================================================================
+     Pipeline: image → ImageTracer SVG
+  ===================================================================== */
+  function imageFileToSVG(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("Failed to read image file."));
+      reader.onload  = () => {
+        const img  = new Image();
+        img.onerror = () => reject(new Error("Could not decode image."));
+        img.onload  = () => {
+          try {
+            const cvs = document.createElement("canvas");
+            cvs.width = img.naturalWidth; cvs.height = img.naturalHeight;
+            cvs.getContext("2d").drawImage(img, 0, 0);
+            const imgData = cvs.getContext("2d").getImageData(0, 0, cvs.width, cvs.height);
+            const svg = ImageTracer.imagedataToSVG(imgData, { ltres: 1, qtres: 1, pathomit: 8, colorsampling: 0, numberofcolors: 2 });
+            resolve(svg);
+          } catch(e) { reject(e); }
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  /* =====================================================================
+     Start / Stop buttons
+  ===================================================================== */
+  document.getElementById("btn-stop").addEventListener("click", () => {
+    if (abortCtrl) abortCtrl.abort();
+    stopAnim();
+    setProgress(false);
+  });
+
+  document.getElementById("btn-start").addEventListener("click", async () => {
+    hideError();
+    abortCtrl = new AbortController();
+    setProgress(true, "Starting…", 10);
+
+    try {
+      if (currentMode === "js") {
+        const code = document.getElementById("js-code").value.trim();
+        if (!code) { showError("Paste some JavaScript first."); setProgress(false); return; }
+        setProgress(true, "Running sandbox…", 20);
+        const paths = await runSandbox(code);
+        if (!paths || paths.length === 0) { showError("No draw commands produced."); setProgress(false); return; }
+        pathArray = paths;
+        const svg = buildSVG(pathArray);
+        setSVGOutput(svg);
+        setProgress(true, "Generating G-code…", 60);
+        playAnim(pathArray);
+        const gcResult = await postConvertGcode(svg);
+        if (gcResult.error) { showError(gcResult.error); setProgress(false); return; }
+        setGcodeOutput(gcResult.gcode);
+        setOutputTab("gcode-out");
+
+      } else if (currentMode === "pdf") {
+        if (!pdfFile) { showError("Drop or select a PDF file first."); setProgress(false); return; }
+        setProgress(true, "Converting PDF…", 30);
+        const pdfResult = await postConvertPDF(pdfFile);
+        if (pdfResult.error) { showError(pdfResult.error); setProgress(false); return; }
+        const svg = pdfResult.svg;
+        setSVGOutput(svg);
+        setProgress(true, "Generating G-code…", 70);
+        const gcResult = await postConvertGcode(svg);
+        if (gcResult.error) { showError(gcResult.error); setProgress(false); return; }
+        setGcodeOutput(gcResult.gcode);
+        setOutputTab("gcode-out");
+
+      } else if (currentMode === "image") {
+        if (!imageFile) { showError("Drop or select an image first."); setProgress(false); return; }
+        setProgress(true, "Tracing image…", 30);
+        const svg = await imageFileToSVG(imageFile);
+        setSVGOutput(svg);
+        setProgress(true, "Generating G-code…", 70);
+        const gcResult = await postConvertGcode(svg);
+        if (gcResult.error) { showError(gcResult.error); setProgress(false); return; }
+        setGcodeOutput(gcResult.gcode);
+        setOutputTab("gcode-out");
+      }
+      setProgress(false);
+    } catch (err) {
+      if (err.name === "AbortError") {
+        setProgress(false);
+        return;
+      }
+      showError(err.message || String(err));
+      setProgress(false);
+    }
+  });
+
+  /* =====================================================================
+     Download buttons
+  ===================================================================== */
+  document.getElementById("btn-dl-svg").addEventListener("click", () => {
+    if (!currentSVG) { showError("No SVG output yet."); return; }
+    triggerDownload(currentSVG, "plotter-lab.svg", "image/svg+xml");
+  });
+  document.getElementById("btn-dl-gcode").addEventListener("click", () => {
+    if (!currentGcode) { showError("No G-code output yet."); return; }
+    triggerDownload(currentGcode, "plotter-lab.gcode", "text/plain");
+  });
+
+  /* =====================================================================
+     Export buttons (JS mode)
+  ===================================================================== */
+  document.getElementById("btn-export-svg").addEventListener("click", () => {
+    if (!currentSVG) { showError("Run the code first to generate SVG."); return; }
+    triggerDownload(currentSVG, "plotter-lab.svg", "image/svg+xml");
+  });
+  document.getElementById("btn-export-gcode").addEventListener("click", () => {
+    if (!currentGcode) { showError("Run the code first to generate G-code."); return; }
+    triggerDownload(currentGcode, "plotter-lab.gcode", "text/plain");
+  });
+
+  /* =====================================================================
+     Initial state
+  ===================================================================== */
+  setMode("js");
+  setPreviewTab("animated");
+  setOutputTab("svg-out");
+  </script>
+</body>
+</html>
