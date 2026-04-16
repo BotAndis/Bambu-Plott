@@ -123,7 +123,12 @@
         <div id="panel-js" class="flex flex-col gap-2 flex-1">
           <label class="text-sm font-medium text-base-content/70">Paste generative JavaScript</label>
           <textarea id="js-code" class="textarea textarea-bordered font-mono text-xs leading-snug flex-1 resize-none" rows="18"
-            placeholder="// Use the draw API:\n// draw.moveTo(x, y)\n// draw.lineTo(x, y)\n// draw.stroke()\n// draw.arc(cx, cy, r, startAngle, endAngle)\n// draw.closePath()"></textarea>
+            placeholder="// Use the draw API:
+// draw.moveTo(x, y)
+// draw.lineTo(x, y)
+// draw.stroke()
+// draw.arc(cx, cy, r, startAngle, endAngle)
+// draw.closePath()"></textarea>
           <p class="text-xs text-base-content/40">
             API: <code>draw.moveTo(x,y)</code> &nbsp;·&nbsp; <code>draw.lineTo(x,y)</code> &nbsp;·&nbsp; <code>draw.stroke()</code>
           </p>
@@ -240,6 +245,8 @@
   let currentGcode   = "";
   let pdfFile        = null;
   let imageFile      = null;
+  let pdfBlobURL     = null;
+  let imgBlobURL     = null;
   let animRafId      = null;
   let animPlaying    = false;
   let abortCtrl      = null;
@@ -369,14 +376,15 @@
       const f = e.dataTransfer.files[0];
       if (f && f.type === "application/pdf") setPDFFile(f);
     });
-    input.addEventListener("change", () => { if (input.files[0]) setPDFFile(input.files[0]); });
+    input.addEventListener("change", () => { if (input.files[0]) { setPDFFile(input.files[0]); input.value = ""; } });
   })();
 
   function setPDFFile(file) {
     pdfFile = file;
-    const url  = URL.createObjectURL(file);
+    if (pdfBlobURL) URL.revokeObjectURL(pdfBlobURL);
+    pdfBlobURL = URL.createObjectURL(file);
     const embed = document.getElementById("pdf-embed");
-    embed.src   = url;
+    embed.src   = pdfBlobURL;
     document.getElementById("pdf-preview-wrap").classList.remove("hidden");
   }
 
@@ -395,14 +403,15 @@
       const f = e.dataTransfer.files[0];
       if (f && (f.type === "image/png" || f.type === "image/jpeg")) setImageFile(f);
     });
-    input.addEventListener("change", () => { if (input.files[0]) setImageFile(input.files[0]); });
+    input.addEventListener("change", () => { if (input.files[0]) { setImageFile(input.files[0]); input.value = ""; } });
   })();
 
   function setImageFile(file) {
     imageFile = file;
-    const url = URL.createObjectURL(file);
+    if (imgBlobURL) URL.revokeObjectURL(imgBlobURL);
+    imgBlobURL = URL.createObjectURL(file);
     const img = document.getElementById("img-preview");
-    img.src   = url;
+    img.src   = imgBlobURL;
     document.getElementById("img-preview-wrap").classList.remove("hidden");
   }
 
@@ -437,14 +446,16 @@ window.onerror = function(msg,src,line,col,err){ parent.postMessage({type:"error
     return new Promise((resolve, reject) => {
       const frame = document.getElementById("sandbox-frame");
       pathArray = [];
-      let currentPath = null;
 
+      let done = false;
       const messages = [];
       const handler = (ev) => {
         if (ev.source !== frame.contentWindow) return;
         const d = ev.data;
         if (!d || !d.type) return;
         if (d.type === "error") {
+          if (done) return;
+          done = true;
           window.removeEventListener("message", handler);
           reject(new Error(d.message));
           return;
@@ -455,21 +466,16 @@ window.onerror = function(msg,src,line,col,err){ parent.postMessage({type:"error
       };
       window.addEventListener("message", handler);
 
-      // Build the sandbox page with user code injected
-      const escaped = jsCode
-        .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
-        .replace(/"/g,"&quot;");
-      // We need raw code, not HTML-escaped — use blob URL instead
       const srcWithCode = SANDBOX_SRCDOC.replace(
         '<script id="user-script"><\/script>',
         `<script id="user-script">${jsCode}<\/script>`
       );
 
       frame.onload = () => {
-        // Give the script 500ms to finish, then resolve
         setTimeout(() => {
+          if (done) return;
+          done = true;
           window.removeEventListener("message", handler);
-          // Build pathArray from messages
           let curPath = null;
           messages.forEach(d => {
             if (d.cmd === "moveTo") {
@@ -483,7 +489,7 @@ window.onerror = function(msg,src,line,col,err){ parent.postMessage({type:"error
             }
           });
           resolve(pathArray);
-        }, 600);
+        }, 400);
       };
       frame.srcdoc = srcWithCode;
     });
@@ -492,7 +498,22 @@ window.onerror = function(msg,src,line,col,err){ parent.postMessage({type:"error
   /* =====================================================================
      Build SVG from pathArray
   ===================================================================== */
-  function buildSVG(paths, width = 200, height = 200) {
+  function buildSVG(paths) {
+    let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+    paths.forEach(p => p.segments.forEach(s => {
+      if (s.args && s.args.length >= 2) {
+        minX = Math.min(minX, s.args[0]);
+        minY = Math.min(minY, s.args[1]);
+        maxX = Math.max(maxX, s.args[0]);
+        maxY = Math.max(maxY, s.args[1]);
+      }
+    }));
+    if (!isFinite(minX)) { minX = 0; minY = 0; maxX = 200; maxY = 200; }
+    const pad = 2;
+    const vbX = minX - pad, vbY = minY - pad;
+    const vbW = Math.max(1, (maxX - minX) + pad * 2);
+    const vbH = Math.max(1, (maxY - minY) + pad * 2);
+
     let svgPaths = "";
     paths.forEach(path => {
       let d = "";
@@ -503,7 +524,7 @@ window.onerror = function(msg,src,line,col,err){ parent.postMessage({type:"error
       });
       if (d.trim()) svgPaths += `<path d="${d.trim()}" fill="none" stroke="#4285F4" stroke-width="0.5"/>\n`;
     });
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}mm" height="${height}mm" viewBox="0 0 ${width} ${height}">\n${svgPaths}</svg>`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${vbW}mm" height="${vbH}mm" viewBox="${vbX} ${vbY} ${vbW} ${vbH}">\n${svgPaths}</svg>`;
   }
 
   /* =====================================================================
@@ -556,7 +577,6 @@ window.onerror = function(msg,src,line,col,err){ parent.postMessage({type:"error
     });
 
     let stepIdx = 0;
-    let penDown = false;
     animPlaying = true;
 
     function tick() {
@@ -569,7 +589,6 @@ window.onerror = function(msg,src,line,col,err){ parent.postMessage({type:"error
         if (seg.cmd === "moveTo") {
           ctx.beginPath();
           ctx.moveTo(tx(seg.args[0]), ty(seg.args[1]));
-          penDown = false;
         } else if (seg.cmd === "lineTo") {
           ctx.strokeStyle = "#4285F4";
           ctx.lineWidth   = 1.5;
