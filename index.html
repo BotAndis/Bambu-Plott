@@ -439,7 +439,7 @@ var draw = {
   },
   closePath: function() { if(this._cur&&this._cur.segments.length){ var first=this._cur.segments[0]; if(first.cmd==="moveTo") this.lineTo(first.args[0],first.args[1]); } parent.postMessage({type:"draw",cmd:"closePath",args:[]},"*"); },
 };
-window.onerror = function(msg,src,line,col,err){ parent.postMessage({type:"error",message:String(msg)},"*"); return true; };
+window.onerror = function(msg,src,line,col,err){ parent.postMessage({type:"error",message:String(msg)+" (line "+line+":"+col+")"},"*"); return true; };
 <\/script><script id="user-script"><\/script></html>`;
 
   function runSandbox(jsCode) {
@@ -468,7 +468,7 @@ window.onerror = function(msg,src,line,col,err){ parent.postMessage({type:"error
 
       const srcWithCode = SANDBOX_SRCDOC.replace(
         '<script id="user-script"><\/script>',
-        `<script id="user-script">${jsCode}<\/script>`
+        () => `<script id="user-script">${jsCode}<\/script>`
       );
 
       frame.onload = () => {
